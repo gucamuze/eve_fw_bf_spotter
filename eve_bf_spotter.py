@@ -13,7 +13,6 @@ request_max_retries = 5
 request_retry_delay = 1
 galcal_id = [500004, 500001] #galmilfirst
 header_info = f"Galmil Discord Bot Prototype/ WIP/ Contact: {os.getenv('MAIL')}"
-print(header_info)
 main_api_url = "https://esi.evetech.net"
 systems_route = "/latest/fw/systems/"
 systems_route_params = "?datasource=tranquility"
@@ -41,6 +40,7 @@ def fetch_request(request_url):
 			time.sleep(request_retry_delay)
 	return None
 
+# get all galcal systems relevant infos: name, system id, faction id and victory points
 def get_systems_infos(galcal_systems) -> list:
 	systems_infos = []
 	for system in galcal_systems:
@@ -53,9 +53,11 @@ def get_systems_infos(galcal_systems) -> list:
 			"victory_points" : system['victory_points']})
 	return systems_infos
 
+# values are arbitrary and subject to change. <10000 check to avoid false positives due to system flipping
 def is_potential_bf(vp_diff_abs) -> bool:
     return vp_diff_abs > 1500 and vp_diff_abs < 10000
 
+# return potential bf status, stating system name, if the bf is offensive or defensive, won or lost, and time
 def get_bf_status(system, galcal_id, diff, formatted_date_time) -> str:
 	faction_id = system['occupier_faction_id']
 	battle_type = "Defensive" if faction_id == galcal_id[0] else "Offensive"
@@ -82,7 +84,6 @@ def sleep_until_next_esi_call(next_esi_call_time):
 	# time.sleep(10)
 
 
-# TODO: clean up this mess and divide it in different functions
 def main():
 	systems_infos_cmp = []
 	# opens the save file if it exists and creates the data from it
@@ -94,60 +95,62 @@ def main():
 	while 1:
 		galcal_systems = []
 		# list of all fw systems in json
-		fw_request_response = fetch_request(main_api_url+systems_route+systems_route_params) 
-		all_fw_systems = fw_request_response.json()
+		fw_request_response = fetch_request(main_api_url+systems_route+systems_route_params)
+		# only continue if response is there, if its None, API might be unreachable
+		if fw_request_response is not None:
+			all_fw_systems = fw_request_response.json()
 
-		# keep only gallente/caldari fw systems
-		for system in all_fw_systems:
-			if system['occupier_faction_id'] in galcal_id:
-				galcal_systems.append(system)
+			# keep only gallente/caldari fw systems
+			for system in all_fw_systems:
+				if system['occupier_faction_id'] in galcal_id:
+					galcal_systems.append(system)
 
-		# create dict of systems with name id faction id and vp
-		systems_infos = get_systems_infos(galcal_systems)
+			# create dict of systems with name id faction id and vp
+			systems_infos = get_systems_infos(galcal_systems)
 
-		if not systems_infos_cmp:
-			print("Populating compare list")
-			systems_infos_cmp = systems_infos
-		else:
-			timestamp = None
-			# compares the vp of new and old all_fw_systems
-			# TODO: make sure both lists are in the same order ! looks like it is but needs more testing
-			for index, system in enumerate(systems_infos):
-				system_vp = system['victory_points']
-				system_vp_cmp = systems_infos_cmp[index]['victory_points']
-				# vp change detected: print and log in file all the changes
-				if system_vp != system_vp_cmp:
-					if timestamp is None:
-						timestamp = fw_request_response.headers['Date']
-					diff = system_vp - system_vp_cmp
-					# BF special case. might get false positive if intense plexing occurs, needs monitoring
-					# upper limit of 10k to avoid false positives due to systems flipping (- or + ~75k)
-					if is_potential_bf(abs(diff)):
-						bf_status = get_bf_status(system, galcal_id, diff, timestamp)
-						print(bf_status)
+			if not systems_infos_cmp:
+				print("Populating compare list")
+				systems_infos_cmp = systems_infos
+			else:
+				timestamp = None
+				# compares the vp of new and old all_fw_systems
+				# TODO: make sure both lists are in the same order ! looks like it is but needs more testing
+				for index, system in enumerate(systems_infos):
+					system_vp = system['victory_points']
+					system_vp_cmp = systems_infos_cmp[index]['victory_points']
+					# vp change detected: print and log in file all the changes
+					if system_vp != system_vp_cmp:
+						if timestamp is None:
+							timestamp = fw_request_response.headers['Date']
+						diff = system_vp - system_vp_cmp
+						# BF special case. might get false positive if intense plexing occurs, needs monitoring
+						# upper limit of 10k to avoid false positives due to systems flipping (- or + ~75k)
+						if is_potential_bf(abs(diff)):
+							bf_status = get_bf_status(system, galcal_id, diff, timestamp)
+							print(bf_status)
+							with open(results_log_filename, "a") as file:
+								file.write(bf_status)
+						# output part, first to CLI then file
+						system_header = f"{timestamp}: {system['name']} ({system['id']})\n"
+						vp_percent_old = system_vp_cmp * 100 / 75000
+						vp_percent_new = system_vp * 100 / 75000
+						vp_percent_change = vp_percent_new - vp_percent_old
+						vp_change = f"\tVictory points change: {str(diff)} ({vp_percent_change:.2f}% change)"
+						system_vp_change_infos = system_header + vp_change
+						print(system_vp_change_infos)
 						with open(results_log_filename, "a") as file:
-							file.write(bf_status)
-					# output part, first to CLI then file
-					system_header = f"{timestamp}: {system['name']} ({system['id']})\n"
-					vp_percent_old = system_vp_cmp * 100 / 75000
-					vp_percent_new = system_vp * 100 / 75000
-					vp_percent_change = vp_percent_new - vp_percent_old
-					vp_change = f"\tVictory points change: {str(diff)} ({vp_percent_change:.2f}% change)"
-					system_vp_change_infos = system_header + vp_change
-					print(system_vp_change_infos)
+							file.write(f"{system_vp_change_infos}\n")
+						# update the system cmp list
+						systems_infos_cmp[index] = system
+				# add spaces for next log
+				if timestamp is not None:
 					with open(results_log_filename, "a") as file:
-						file.write(f"{system_vp_change_infos}\n")
-					# update the system cmp list
-					systems_infos_cmp[index] = system
-			# add spaces for next log
-			if timestamp is not None:
-				with open(results_log_filename, "a") as file:
-					file.write("\n\n")
-     
-		with open(save_log_filaname, "w") as file:
-			json.dump(systems_infos_cmp, file)
+						file.write("\n\n")
+		
+			with open(save_log_filaname, "w") as file:
+				json.dump(systems_infos_cmp, file)
 
-		sleep_until_next_esi_call(fw_request_response.headers['Expires'])
+			sleep_until_next_esi_call(fw_request_response.headers['Expires'])
 
 	
 if __name__ == '__main__':
