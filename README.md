@@ -3,4 +3,6 @@ A python program aimed at gathering data from the official Eve ESI API to spot t
 This is merely a prototype for a discord bot in development
 
 *Usage*
-Create a .env file with a 'MAIL=yourmail' field if you want to respect ESI's recommendations. Then just launch the script using python3
+Create a .env file with a 'MAIL=yourmail' field if you want to respect ESI's recommendations. Then just launch the script using python3.
+
+The script updates every 30 minutes at :00 and :30, that being the ESI's cache route limit, as specified in the response headers. Will output victory points changes on all galcal systems in both CLI and a log file (log.json which is actually not a json format file :| ), with a special output in case a BF is detected.

@@ -112,19 +112,16 @@ def main():
 				print("Populating compare list")
 				systems_infos_cmp = systems_infos
 			else:
+				# timestamp default is none, will be set if there is at least one vp change
 				timestamp = None
 				# compares the vp of new and old all_fw_systems
-				# TODO: make sure both lists are in the same order ! looks like it is but needs more testing
 				for index, system in enumerate(systems_infos):
 					system_vp = system['victory_points']
 					system_vp_cmp = systems_infos_cmp[index]['victory_points']
 					# vp change detected: print and log in file all the changes
 					if system_vp != system_vp_cmp:
-						if timestamp is None:
-							timestamp = fw_request_response.headers['Date']
+						timestamp = fw_request_response.headers['Date']
 						diff = system_vp - system_vp_cmp
-						# BF special case. might get false positive if intense plexing occurs, needs monitoring
-						# upper limit of 10k to avoid false positives due to systems flipping (- or + ~75k)
 						if is_potential_bf(abs(diff)):
 							bf_status = get_bf_status(system, galcal_id, diff, timestamp)
 							print(bf_status)
