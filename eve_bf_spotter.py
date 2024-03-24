@@ -126,7 +126,7 @@ def main():
 							bf_status = get_bf_status(system, galcal_id, diff, timestamp)
 							print(bf_status)
 							with open(results_log_filename, "a") as file:
-								file.write(bf_status)
+								file.write(f"{bf_status}\n")
 						# output part, first to CLI then file
 						system_header = f"{timestamp}: {system['name']} ({system['id']})\n"
 						vp_percent_old = system_vp_cmp * 100 / 75000
