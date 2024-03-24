@@ -66,89 +66,90 @@ def get_bf_status(system, galcal_id, diff, formatted_date_time) -> str:
 	else:
 		outcome = "won" if diff > 0 else "lost"
 	return f"{system['name']}: Potential {battle_type} battlefield {outcome} detected ({formatted_date_time})"
-
-#thanks chatgpt i hate time shaeningans
-def sleep_until_next_esi_call(next_esi_call_time):
+ 
+# Takes a RFC compliant string as given per the ESI, and returns true if that 
+def task_must_run(next_task_run_time) -> bool:
+	if not next_task_run_time:
+		return True
 	gmt_offset = datetime.timezone(datetime.timedelta(hours=0))  # GMT timezone offset is 0 hours
-	target_time_gmt = datetime.datetime.strptime(next_esi_call_time, "%a, %d %b %Y %H:%M:%S %Z").replace(tzinfo=gmt_offset)
+	target_time_gmt = datetime.datetime.strptime(next_task_run_time, "%a, %d %b %Y %H:%M:%S %Z").replace(tzinfo=gmt_offset)
 	# Convert GMT time to UTC
 	target_time_utc = target_time_gmt.astimezone(datetime.timezone.utc)
 	# Get the current UTC time
 	current_time_utc = datetime.datetime.now(datetime.timezone.utc)
 	# Calculate the time difference between the current UTC time and the target time
-	time_difference = target_time_utc - current_time_utc
+	time_difference = (target_time_utc - current_time_utc).total_seconds() + 60
 	# Convert the time difference to seconds
-	sleep_duration = time_difference.total_seconds() + 60
-	print(f"Fetching done, sleeping for {sleep_duration} seconds until {target_time_utc} + 60seconds")
-	time.sleep(sleep_duration)
-	# time.sleep(10)
+	return time_difference < 0
 
-
-def main():
+# returns a list with [0]->next call schedule and [1]->potential bf completions
+async def bf_spotter_get_bf_completion():
 	systems_infos_cmp = []
+	all_systems_vp_changes = ""
+	bf_status = None
 	# opens the save file if it exists and creates the data from it
 	if os.path.exists(save_log_filaname):
 		with (open(save_log_filaname, "r")) as file:
 			systems_infos_cmp = json.load(file)
 			print("Populated compare list via save file")
-	# main loop, once every minute
-	while 1:
-		galcal_systems = []
-		# list of all fw systems in json
-		fw_request_response = fetch_request(main_api_url+systems_route+systems_route_params)
-		# only continue if response is there, if its None, API might be unreachable
-		if fw_request_response is not None:
-			all_fw_systems = fw_request_response.json()
 
-			# keep only gallente/caldari fw systems
-			for system in all_fw_systems:
-				if system['occupier_faction_id'] in galcal_id:
-					galcal_systems.append(system)
+	galcal_systems = []
+	# list of all fw systems in json
+	fw_request_response = fetch_request(main_api_url+systems_route+systems_route_params)
+	# only continue if response is there, if its None, API might be unreachable
+	if fw_request_response is not None:
+		all_fw_systems = fw_request_response.json()
 
-			# create dict of systems with name id faction id and vp
-			systems_infos = get_systems_infos(galcal_systems)
+		# keep only gallente/caldari fw systems
+		for system in all_fw_systems:
+			if system['occupier_faction_id'] in galcal_id:
+				galcal_systems.append(system)
 
-			if not systems_infos_cmp:
-				print("Populating compare list")
-				systems_infos_cmp = systems_infos
-			else:
-				# timestamp default is none, will be set if there is at least one vp change
-				timestamp = None
-				# compares the vp of new and old all_fw_systems
-				for index, system in enumerate(systems_infos):
-					system_vp = system['victory_points']
-					system_vp_cmp = systems_infos_cmp[index]['victory_points']
-					# vp change detected: print and log in file all the changes
-					if system_vp != system_vp_cmp:
-						timestamp = fw_request_response.headers['Date']
-						diff = system_vp - system_vp_cmp
-						if is_potential_bf(abs(diff)):
-							bf_status = get_bf_status(system, galcal_id, diff, timestamp)
-							print(bf_status)
-							with open(results_log_filename, "a") as file:
-								file.write(bf_status)
-						# output part, first to CLI then file
-						system_header = f"{timestamp}: {system['name']} ({system['id']})\n"
-						vp_percent_old = system_vp_cmp * 100 / 75000
-						vp_percent_new = system_vp * 100 / 75000
-						vp_percent_change = vp_percent_new - vp_percent_old
-						vp_change = f"\tVictory points change: {str(diff)} ({vp_percent_change:.2f}% change)"
-						system_vp_change_infos = system_header + vp_change
-						print(system_vp_change_infos)
+		# create dict of systems with name id faction id and vp
+		systems_infos = get_systems_infos(galcal_systems)
+
+		if not systems_infos_cmp:
+			print("Populating compare list")
+			systems_infos_cmp = systems_infos
+		else:
+			# timestamp default is none, will be set if there is at least one vp change
+			timestamp = None
+			# compares the vp of new and old all_fw_systems
+			for index, system in enumerate(systems_infos):
+				system_vp = system['victory_points']
+				system_vp_cmp = systems_infos_cmp[index]['victory_points']
+				# vp change detected: print and log in file all the changes
+				if system_vp != system_vp_cmp:
+					timestamp = fw_request_response.headers['Date']
+					diff = system_vp - system_vp_cmp
+					if is_potential_bf(abs(diff)):
+						bf_status = get_bf_status(system, galcal_id, diff, timestamp)
+						print(bf_status)
+						all_systems_vp_changes += f'{bf_status}\n'
 						with open(results_log_filename, "a") as file:
-							file.write(f"{system_vp_change_infos}\n")
-						# update the system cmp list
-						systems_infos_cmp[index] = system
-				# add spaces for next log
-				if timestamp is not None:
+							file.write(bf_status)
+					# output part, first to CLI then file
+					system_header = f"{timestamp}: {system['name']} ({system['id']})\n"
+					vp_percent_old = system_vp_cmp * 100 / 75000
+					vp_percent_new = system_vp * 100 / 75000
+					vp_percent_change = vp_percent_new - vp_percent_old
+					vp_change = f"\tVictory points change: {str(diff)} ({vp_percent_change:.2f}% change)"
+					system_vp_change_infos = system_header + vp_change
+					print(system_vp_change_infos)
+					all_systems_vp_changes += system_vp_change_infos
 					with open(results_log_filename, "a") as file:
-						file.write("\n\n")
-		
-			with open(save_log_filaname, "w") as file:
-				json.dump(systems_infos_cmp, file)
-
-			sleep_until_next_esi_call(fw_request_response.headers['Expires'])
-
+						file.write(f"{system_vp_change_infos}\n")
+					# update the system cmp list
+					systems_infos_cmp[index] = system
+			# add spaces for next log
+			if timestamp is not None:
+				with open(results_log_filename, "a") as file:
+					file.write("\n\n")
 	
-if __name__ == '__main__':
-	sys.exit(main())
+		with open(save_log_filaname, "w") as file:
+			json.dump(systems_infos_cmp, file)
+   
+		print("bf_spotter done")
+		return [fw_request_response.headers['Expires'], all_systems_vp_changes]
+
+	return None
