@@ -1,5 +1,4 @@
 import requests
-import sys
 import time
 import datetime
 import json
@@ -22,7 +21,7 @@ results_log_filename = "log.json"
 save_log_filaname = "cmp_data.json"
 
 # less error-prone get request, catches exceptions. returns the json
-def fetch_request(request_url):
+def fetch_request(request_url) -> requests.Response | None:
 	for attempt in range(request_max_retries):
 		try:
 			response = requests.get(request_url, headers={"User-Agent": header_info})
@@ -58,16 +57,20 @@ def is_potential_bf(vp_diff_abs) -> bool:
     return vp_diff_abs > 1500 and vp_diff_abs < 10000
 
 # return potential bf status, stating system name, if the bf is offensive or defensive, won or lost, and time
-def get_bf_status(system, galcal_id, diff, formatted_date_time) -> str:
+def get_bf_status(system, galcal_id, diff) -> dict:
 	faction_id = system['occupier_faction_id']
 	battle_type = "Defensive" if faction_id == galcal_id[0] else "Offensive"
 	if faction_id == galcal_id[0]:
 		outcome = "won" if diff < 0 else "lost"
 	else:
 		outcome = "won" if diff > 0 else "lost"
-	return f"{system['name']}: Potential {battle_type} battlefield {outcome} detected ({formatted_date_time})"
+	return {"system_name" : system['name'],
+			"bf_type" : battle_type,
+   			"outcome" : outcome,
+      		"system_vp_percent" : 0.0}
+	# return f"{system['name']}: Potential {battle_type} battlefield {outcome} detected ({formatted_date_time})"
  
-# Takes a RFC compliant string as given per the ESI, and returns true if that 
+# Takes a RFC compliant string as given by the ESI, and returns true if time given in string is past due
 def task_must_run(next_task_run_time) -> bool:
 	if not next_task_run_time:
 		return True
@@ -78,15 +81,15 @@ def task_must_run(next_task_run_time) -> bool:
 	# Get the current UTC time
 	current_time_utc = datetime.datetime.now(datetime.timezone.utc)
 	# Calculate the time difference between the current UTC time and the target time
-	time_difference = (target_time_utc - current_time_utc).total_seconds() + 60
-	# Convert the time difference to seconds
+	time_difference = (target_time_utc - current_time_utc).total_seconds()
+ 
 	return time_difference < 0
 
-# returns a list with [0]->next call schedule and [1]->potential bf completions
-async def bf_spotter_get_bf_completion():
+# returns a list with [0]->next call schedule, [2]->vp changes (temporary), [1]->potential bf completions, or None if API is unreachable
+async def bf_spotter_get_bf_completion() -> list | None :
 	systems_infos_cmp = []
-	all_systems_vp_changes = ""
-	bf_status = None
+	TMP_all_systems_vp_changes = ""
+	results = []
 	# opens the save file if it exists and creates the data from it
 	if os.path.exists(save_log_filaname):
 		with (open(save_log_filaname, "r")) as file:
@@ -99,7 +102,7 @@ async def bf_spotter_get_bf_completion():
 	# only continue if response is there, if its None, API might be unreachable
 	if fw_request_response is not None:
 		all_fw_systems = fw_request_response.json()
-
+  
 		# keep only gallente/caldari fw systems
 		for system in all_fw_systems:
 			if system['occupier_faction_id'] in galcal_id:
@@ -120,36 +123,38 @@ async def bf_spotter_get_bf_completion():
 				system_vp_cmp = systems_infos_cmp[index]['victory_points']
 				# vp change detected: print and log in file all the changes
 				if system_vp != system_vp_cmp:
-					timestamp = fw_request_response.headers['Date']
 					diff = system_vp - system_vp_cmp
-					if is_potential_bf(abs(diff)):
-						bf_status = get_bf_status(system, galcal_id, diff, timestamp)
-						print(bf_status)
-						all_systems_vp_changes += f'{bf_status}\n'
-						with open(results_log_filename, "a") as file:
-							file.write(bf_status)
+					timestamp = fw_request_response.headers['Date']
 					# output part, first to CLI then file
 					system_header = f"{timestamp}: {system['name']} ({system['id']})\n"
 					vp_percent_old = system_vp_cmp * 100 / 75000
 					vp_percent_new = system_vp * 100 / 75000
 					vp_percent_change = vp_percent_new - vp_percent_old
-					vp_change = f"\tVictory points change: {str(diff)} ({vp_percent_change:.2f}% change)"
+					vp_change = f"\tVictory points change: {str(diff)} ({vp_percent_change:.2f}% change)\n"
 					system_vp_change_infos = system_header + vp_change
 					print(system_vp_change_infos)
-					all_systems_vp_changes += system_vp_change_infos
+					TMP_all_systems_vp_changes += system_vp_change_infos
+					# battlefield spotting
+					if is_potential_bf(abs(diff)):
+						bf_status = get_bf_status(system, galcal_id, diff)
+						bf_status['system_vp_percent'] = vp_percent_new
+						results.append(bf_status)
+						print(bf_status)
+						# with open(results_log_filename, "a") as file:
+						# 	file.write(bf_status)
 					with open(results_log_filename, "a") as file:
-						file.write(f"{system_vp_change_infos}\n")
+						file.write(f"{system_vp_change_infos}")
 					# update the system cmp list
 					systems_infos_cmp[index] = system
 			# add spaces for next log
-			if timestamp is not None:
-				with open(results_log_filename, "a") as file:
-					file.write("\n\n")
+			# if timestamp is not None:
+			# 	with open(results_log_filename, "a") as file:
+			# 		file.write("\n\n")
 	
 		with open(save_log_filaname, "w") as file:
 			json.dump(systems_infos_cmp, file)
    
 		print("bf_spotter done")
-		return [fw_request_response.headers['Expires'], all_systems_vp_changes]
+		return [fw_request_response.headers['Expires'], results, TMP_all_systems_vp_changes]
 
 	return None
