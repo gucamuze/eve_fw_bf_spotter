@@ -21,7 +21,7 @@ results_log_filename = "log.json"
 save_log_filaname = "cmp_data.json"
 
 # less error-prone get request, catches exceptions. returns the json
-def fetch_request(request_url) -> requests.Response | None:
+def fetch_request(request_url: str) -> requests.Response | None:
 	for attempt in range(request_max_retries):
 		try:
 			response = requests.get(request_url, headers={"User-Agent": header_info})
@@ -40,7 +40,7 @@ def fetch_request(request_url) -> requests.Response | None:
 	return None
 
 # get all galcal systems relevant infos: name, system id, faction id and victory points
-def get_systems_infos(galcal_systems) -> list:
+def get_systems_infos(galcal_systems: list) -> list[dict]:
 	systems_infos = []
 	for system in galcal_systems:
 		system_id = system['solar_system_id']
@@ -53,11 +53,11 @@ def get_systems_infos(galcal_systems) -> list:
 	return systems_infos
 
 # values are arbitrary and subject to change. <10000 check to avoid false positives due to system flipping
-def is_potential_bf(vp_diff_abs) -> bool:
+def is_potential_bf(vp_diff_abs: int) -> bool:
     return vp_diff_abs > 1500 and vp_diff_abs < 10000
 
 # return potential bf status, stating system name, if the bf is offensive or defensive, won or lost, and time
-def get_bf_status(system, galcal_id, diff) -> dict:
+def get_bf_status(system: list, galcal_id: int, diff: int) -> dict[str, str, str, float]:
 	faction_id = system['occupier_faction_id']
 	battle_type = "Defensive" if faction_id == galcal_id[0] else "Offensive"
 	if faction_id == galcal_id[0]:
@@ -68,10 +68,9 @@ def get_bf_status(system, galcal_id, diff) -> dict:
 			"bf_type" : battle_type,
    			"outcome" : outcome,
       		"system_vp_percent" : 0.0}
-	# return f"{system['name']}: Potential {battle_type} battlefield {outcome} detected ({formatted_date_time})"
  
 # Takes a RFC compliant string as given by the ESI, and returns true if time given in string is past due
-def task_must_run(next_task_run_time) -> bool:
+def task_must_run(next_task_run_time: str) -> bool:
 	if not next_task_run_time:
 		return True
 	gmt_offset = datetime.timezone(datetime.timedelta(hours=0))  # GMT timezone offset is 0 hours
@@ -86,7 +85,7 @@ def task_must_run(next_task_run_time) -> bool:
 	return time_difference < 0
 
 # returns a list with [0]->next call schedule, [2]->vp changes (temporary), [1]->potential bf completions, or None if API is unreachable
-async def bf_spotter_get_bf_completion() -> list | None :
+async def bf_spotter_get_bf_completion() -> list[str, dict, None] | None :
 	systems_infos_cmp = []
 	TMP_all_systems_vp_changes = ""
 	results = []
@@ -147,9 +146,9 @@ async def bf_spotter_get_bf_completion() -> list | None :
 					# update the system cmp list
 					systems_infos_cmp[index] = system
 			# add spaces for next log
-			# if timestamp is not None:
-			# 	with open(results_log_filename, "a") as file:
-			# 		file.write("\n\n")
+			if timestamp is not None:
+				with open(results_log_filename, "a") as file:
+					file.write("\n\n")
 	
 		with open(save_log_filaname, "w") as file:
 			json.dump(systems_infos_cmp, file)
