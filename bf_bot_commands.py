@@ -36,9 +36,9 @@ async def send_battlefield_status_to_all_channels(all_bf_infos: list[dict],
                                             value=f"{bf_infos['system_vp_percent']:.2f}%",
                                             inline=False)
         if not custom_time:
-            bf_time = datetime.now()
+            bf_time: datetime = datetime.now()
         battlefield_message.add_field(name=f"Next {bf_infos['bf_type']} battlefield time estimate:",
-                                        value=f'{(bf_time + timedelta(hours=2)).strftime("%A, %B %d, %Y %I:%M:%S %p -- EVE time")}',
+                                        value=f'<t:{(bf_time + timedelta(hours=3)).strftime("%s")}>',
                                         inline=False)
         await dispatch_message(battlefield_message, all_channels)
         

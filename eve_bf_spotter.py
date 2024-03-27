@@ -11,7 +11,7 @@ load_dotenv()
 request_max_retries = 5
 request_retry_delay = 1
 galcal_id = [500004, 500001] #galmilfirst
-header_info = f"Galmil Discord Bot Prototype/ WIP/ Contact: {os.getenv('MAIL')}"
+header_info = f"Galmil Discord Bot Beta / Contact: {os.getenv('MAIL')}"
 main_api_url = "https://esi.evetech.net"
 systems_route = "/latest/fw/systems/"
 systems_route_params = "?datasource=tranquility"
