@@ -35,6 +35,17 @@ async def send_battlefield_status_to_all_channels(all_bf_infos: list[dict],
             battlefield_message.add_field(name="System contest:",
                                             value=f"{bf_infos['system_vp_percent']:.2f}%",
                                             inline=False)
+        if bf_infos["system_adv"] is not None:
+            adv = bf_infos['system_adv']
+            faction_adv = ""
+            if faction_adv > 0:
+                faction_adv = "Gallente"
+            elif faction_adv < 0:
+                faction_adv = "Caldari"
+            battlefield_message.add_field(name="System advantadge:",
+                                            value=f"{abs(adv)}% {faction_adv}",
+                                            inline=False)
+
         if not custom_time:
             bf_time: datetime = datetime.now()
         battlefield_message.add_field(name=f"Next {bf_infos['bf_type']} battlefield time estimate:",
@@ -81,9 +92,11 @@ async def add_custom_bf(command: str, send_to: discord.TextChannel | list[discor
     if error_message is not None:
         await dispatch_message(error_message)
     else:
+        #TODO: Fetch vp / adv dynamically
         custom_bf = {"system_name" : args[1],
                      "bf_type" : args[2],
                      "outcome" : args[3],
-                     "system_vp_percent" : None}
+                     "system_vp_percent" : None,
+                     "system_adv" : None}
         print(custom_bf)
-        await send_battlefield_status_to_all_channels([custom_bf], send_to)
+        await send_battlefield_status_to_all_channels([custom_bf], send_to[0])

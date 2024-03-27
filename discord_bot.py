@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from discord.ext import tasks
 
 from eve_bf_spotter import bf_spotter_get_bf_completion, task_must_run
-from bf_bot_commands import dispatch_message, send_battlefield_status_to_all_channels, add_custom_bf
+from discord_bot_utils import dispatch_message, send_battlefield_status_to_all_channels, add_custom_bf
 
 load_dotenv()
 token: str = os.getenv('BOT_TOKEN')

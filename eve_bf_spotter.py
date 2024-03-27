@@ -4,6 +4,7 @@ import datetime
 import json
 import os
 from dotenv import load_dotenv
+from adv_scraper import scrapper_get_adv
 
 load_dotenv()
 
@@ -21,7 +22,8 @@ results_log_filename = "log.json"
 save_log_filaname = "cmp_data.json"
 
 # less error-prone get request, catches exceptions. returns the json
-def fetch_request(request_url: str) -> requests.Response | None:
+# TODO: NEED TO MAKE ASYNC REQUESTS !
+async def fetch_request(request_url: str) -> requests.Response | None:
 	for attempt in range(request_max_retries):
 		try:
 			response = requests.get(request_url, headers={"User-Agent": header_info})
@@ -39,17 +41,25 @@ def fetch_request(request_url: str) -> requests.Response | None:
 			time.sleep(request_retry_delay)
 	return None
 
+def get_system_adv(system_id: int, systems_adv: list[dict]) -> int:
+    for system in systems_adv:
+        if system["id"] == system_id:
+            return system["adv"]
+
 # get all galcal systems relevant infos: name, system id, faction id and victory points
-def get_systems_infos(galcal_systems: list) -> list[dict]:
+async def get_systems_infos(galcal_systems: list, systems_adv: list[dict]) -> list[dict]:
 	systems_infos = []
 	for system in galcal_systems:
-		system_id = system['solar_system_id']
-		system_info = fetch_request(main_api_url+systems_name_route+str(system_id)+systems_name_params).json()
+		system_id: int = int(system['solar_system_id'])
+		system_info = await fetch_request(main_api_url+systems_name_route+str(system_id)+systems_name_params)
+		system_info = system_info.json()
+		system_adv = get_system_adv(system_id, systems_adv)
 		systems_infos.append({
 			"name" : system_info['name'],
 			"id" : system_id,
 			"occupier_faction_id" : system["occupier_faction_id"],
-			"victory_points" : system['victory_points']})
+			"victory_points" : system['victory_points'],
+   			"adv" : system_adv})
 	return systems_infos
 
 # values are arbitrary and subject to change. <10000 check to avoid false positives due to system flipping
@@ -67,7 +77,8 @@ def get_bf_status(system: list, galcal_id: int, diff: int) -> dict[str, str, str
 	return {"system_name" : system['name'],
 			"bf_type" : battle_type,
    			"outcome" : outcome,
-      		"system_vp_percent" : 0.0}
+      		"system_vp_percent" : 0.0,
+        	"system_adv" : system['adv']}
  
 # Takes a RFC compliant string as given by the ESI, and returns true if time given in string is past due
 def task_must_run(next_task_run_time: str) -> bool:
@@ -97,7 +108,7 @@ async def bf_spotter_get_bf_completion() -> list[str, dict, None] | None :
 
 	galcal_systems = []
 	# list of all fw systems in json
-	fw_request_response = fetch_request(main_api_url+systems_route+systems_route_params)
+	fw_request_response = await fetch_request(main_api_url+systems_route+systems_route_params)
 	# only continue if response is there, if its None, API might be unreachable
 	if fw_request_response is not None:
 		all_fw_systems = fw_request_response.json()
@@ -106,9 +117,11 @@ async def bf_spotter_get_bf_completion() -> list[str, dict, None] | None :
 		for system in all_fw_systems:
 			if system['occupier_faction_id'] in galcal_id:
 				galcal_systems.append(system)
+    
+		systems_adv = await scrapper_get_adv()
 
 		# create dict of systems with name id faction id and vp
-		systems_infos = get_systems_infos(galcal_systems)
+		systems_infos = await get_systems_infos(galcal_systems, systems_adv)
 
 		if not systems_infos_cmp:
 			print("Populating compare list")
@@ -120,17 +133,21 @@ async def bf_spotter_get_bf_completion() -> list[str, dict, None] | None :
 			for index, system in enumerate(systems_infos):
 				system_vp = system['victory_points']
 				system_vp_cmp = systems_infos_cmp[index]['victory_points']
+				system_adv = system['adv']
+				system_adv_cmp = systems_infos_cmp[index]['adv']
 				# vp change detected: print and log in file all the changes
+				#TODO: change heuristics
 				if system_vp != system_vp_cmp:
 					diff = system_vp - system_vp_cmp
 					timestamp = fw_request_response.headers['Date']
 					# output part, first to CLI then file
-					system_header = f"{timestamp}: {system['name']} ({system['id']})\n"
+					system_header = f"{timestamp}: {system['name']} ({str(system['id'])})\n"
 					vp_percent_old = system_vp_cmp * 100 / 75000
 					vp_percent_new = system_vp * 100 / 75000
 					vp_percent_change = vp_percent_new - vp_percent_old
 					vp_change = f"\tVictory points change: {str(diff)} ({vp_percent_change:.2f}% change)\n"
-					system_vp_change_infos = system_header + vp_change
+					adv_change = f"\tAdvantadge change: {str(system_adv - system_adv_cmp)}%\n"
+					system_vp_change_infos = system_header + vp_change + adv_change
 					print(system_vp_change_infos)
 					TMP_all_systems_vp_changes += system_vp_change_infos
 					# battlefield spotting
