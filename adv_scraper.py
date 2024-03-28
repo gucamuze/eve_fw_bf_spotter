@@ -7,6 +7,15 @@ from selenium.webdriver.support import expected_conditions as EC
 import asyncio
 from icecream import ic
 
+def init_scrapper() -> webdriver.Chrome:
+    frontlines_url: str = "https://www.eveonline.com/frontlines/gallente"
+    scrapper_options = Options()
+    scrapper_options.add_argument("--headless")
+    driver = webdriver.Chrome(options=scrapper_options)
+    driver.get(frontlines_url)
+    return driver
+    
+
 def scroll_to_load_page(driver: webdriver.Chrome):
     max_scroll_attempts = 10
     scroll_attempt = 0
@@ -26,12 +35,24 @@ def scroll_to_load_page(driver: webdriver.Chrome):
             scroll_attempt += 1
     return loaded
 
-async def scrapper_get_adv() -> list[dict]:
-    frontlines_url = "https://www.eveonline.com/frontlines/gallente"
-    scrapper_options = Options()
-    scrapper_options.add_argument("--headless")
-    driver = webdriver.Chrome(options=scrapper_options)
-    driver.get(frontlines_url)
+async def scrapper_get_specific_system_adv(system_id: int) -> int:
+    driver = init_scrapper()
+    system_adv = 0
+
+    # Scroll down to make the element appear
+    loaded = scroll_to_load_page(driver)
+    if loaded is not None:
+        solarsystem_elements = driver.find_element(By.XPATH, f"//*[starts-with(@id, 'solarsystem-{system_id}')]")
+        adv_node = solarsystem_elements.find_element(By.XPATH, ".//*[starts-with(@class, 'mantine-Text-root')]")
+        system_adv = int(adv_node.text.removesuffix("%"))
+        if adv_node.get_attribute("class").find("2kmlov") != -1:
+            system_adv *= -1
+
+    driver.quit
+    return system_adv
+
+async def scrapper_get_all_systems_adv() -> list[dict]:
+    driver = init_scrapper()
     results: list[dict] = []
 
     # Scroll down to make the element appear
@@ -52,7 +73,7 @@ async def scrapper_get_adv() -> list[dict]:
     return results
 
 async def main():
-    results = await scrapper_get_adv()
+    results = await scrapper_get_all_systems_adv()
     ic (results)
 
 if __name__ == "__main__":

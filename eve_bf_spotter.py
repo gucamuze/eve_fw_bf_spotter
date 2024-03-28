@@ -4,7 +4,7 @@ import datetime
 import json
 import os
 from dotenv import load_dotenv
-from adv_scraper import scrapper_get_adv
+from adv_scraper import scrapper_get_all_systems_adv
 
 load_dotenv()
 
@@ -67,7 +67,7 @@ def is_potential_bf(vp_diff_abs: int) -> bool:
     return vp_diff_abs > 1500 and vp_diff_abs < 10000
 
 # return potential bf status, stating system name, if the bf is offensive or defensive, won or lost, and time
-def get_bf_status(system: list, galcal_id: int, diff: int) -> dict[str, str, str, float]:
+def get_bf_status(system: dict, galcal_id: int, diff: int) -> dict[str, str, str, float]:
 	faction_id = system['occupier_faction_id']
 	battle_type = "Defensive" if faction_id == galcal_id[0] else "Offensive"
 	if faction_id == galcal_id[0]:
@@ -81,6 +81,7 @@ def get_bf_status(system: list, galcal_id: int, diff: int) -> dict[str, str, str
         	"system_adv" : system['adv']}
  
 # Takes a RFC compliant string as given by the ESI, and returns true if time given in string is past due
+# TODO: This is complicated garbage that needs refactoring
 def task_must_run(next_task_run_time: str) -> bool:
 	if not next_task_run_time:
 		return True
@@ -94,6 +95,11 @@ def task_must_run(next_task_run_time: str) -> bool:
 	time_difference = (target_time_utc - current_time_utc).total_seconds()
  
 	return time_difference < 0
+
+def get_cmp_index(systems_infos_cmp: list, id: int) -> int:
+    for index, system in enumerate(systems_infos_cmp):
+        if system['id'] == id:
+            return index
 
 # returns a list with [0]->next call schedule, [2]->vp changes (temporary), [1]->potential bf completions, or None if API is unreachable
 async def bf_spotter_get_bf_completion() -> list[str, dict, None] | None :
@@ -118,8 +124,7 @@ async def bf_spotter_get_bf_completion() -> list[str, dict, None] | None :
 			if system['occupier_faction_id'] in galcal_id:
 				galcal_systems.append(system)
     
-		systems_adv = await scrapper_get_adv()
-
+		systems_adv = await scrapper_get_all_systems_adv()
 		# create dict of systems with name id faction id and vp
 		systems_infos = await get_systems_infos(galcal_systems, systems_adv)
 
@@ -130,11 +135,12 @@ async def bf_spotter_get_bf_completion() -> list[str, dict, None] | None :
 			# timestamp default is none, will be set if there is at least one vp change
 			timestamp = None
 			# compares the vp of new and old all_fw_systems
-			for index, system in enumerate(systems_infos):
+			for system in systems_infos:
+				cmp_index = get_cmp_index(systems_infos_cmp, system['id'])
 				system_vp = system['victory_points']
-				system_vp_cmp = systems_infos_cmp[index]['victory_points']
+				system_vp_cmp = systems_infos_cmp[cmp_index]['victory_points']
 				system_adv = system['adv']
-				system_adv_cmp = systems_infos_cmp[index]['adv']
+				system_adv_cmp = systems_infos_cmp[cmp_index]['adv']
 				# vp change detected: print and log in file all the changes
 				#TODO: change heuristics
 				if system_vp != system_vp_cmp:
@@ -146,30 +152,29 @@ async def bf_spotter_get_bf_completion() -> list[str, dict, None] | None :
 					vp_percent_new = system_vp * 100 / 75000
 					vp_percent_change = vp_percent_new - vp_percent_old
 					vp_change = f"\tVictory points change: {str(diff)} ({vp_percent_change:.2f}% change)\n"
-					adv_change = f"\tAdvantadge change: {str(system_adv - system_adv_cmp)}%\n"
-					system_vp_change_infos = system_header + vp_change + adv_change
-					print(system_vp_change_infos)
-					TMP_all_systems_vp_changes += system_vp_change_infos
+					adv_change = f"\tAdvantage change: {str(system_adv - system_adv_cmp)}%\n"
+					system_changes = system_header + vp_change + adv_change
+					print(system_changes)
+					TMP_all_systems_vp_changes += system_changes
 					# battlefield spotting
 					if is_potential_bf(abs(diff)):
 						bf_status = get_bf_status(system, galcal_id, diff)
 						bf_status['system_vp_percent'] = vp_percent_new
 						results.append(bf_status)
 						print(bf_status)
-						# with open(results_log_filename, "a") as file:
-						# 	file.write(bf_status)
+						with open("bf_log.json", "a") as file:
+							file.write(f"{bf_status}\n{system_changes}\n")
 					with open(results_log_filename, "a") as file:
-						file.write(f"{system_vp_change_infos}")
+						file.write(f"{system_changes}")
 					# update the system cmp list
-					systems_infos_cmp[index] = system
+					systems_infos_cmp[cmp_index] = system
 			# add spaces for next log
 			if timestamp is not None:
 				with open(results_log_filename, "a") as file:
 					file.write("\n\n")
+				with open(save_log_filaname, "w") as file:
+					json.dump(systems_infos_cmp, file)
 	
-		with open(save_log_filaname, "w") as file:
-			json.dump(systems_infos_cmp, file)
-   
 		print("bf_spotter done")
 		return [fw_request_response.headers['Expires'], results, TMP_all_systems_vp_changes]
 

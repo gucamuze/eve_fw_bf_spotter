@@ -26,8 +26,9 @@ async def send_battlefield_status_to_all_channels(all_bf_infos: list[dict],
                                                   all_channels: list[discord.TextChannel],
                                                   custom_time = None):
     for bf_infos in all_bf_infos:
+        bf_emote = ":shield:" if bf_infos['bf_type'] == "Defensive" else ":crossed_swords:"
         battlefield_message = discord.Embed(
-            title=f"{bf_infos['system_name']} -- {bf_infos['bf_type']} battlefield {bf_infos['outcome']}",
+            title=f"{bf_emote} {bf_infos['system_name']} -- {bf_infos['bf_type']} battlefield {bf_infos['outcome']}",
             timestamp=datetime.now() if custom_time is None else custom_time,
             color= discord.Color.green() if bf_infos['outcome'] == "won" else discord.Color.red()
         )
@@ -38,11 +39,11 @@ async def send_battlefield_status_to_all_channels(all_bf_infos: list[dict],
         if bf_infos["system_adv"] is not None:
             adv = bf_infos['system_adv']
             faction_adv = ""
-            if faction_adv > 0:
+            if adv > 0:
                 faction_adv = "Gallente"
-            elif faction_adv < 0:
+            elif adv < 0:
                 faction_adv = "Caldari"
-            battlefield_message.add_field(name="System advantadge:",
+            battlefield_message.add_field(name="System advantage:",
                                             value=f"{abs(adv)}% {faction_adv}",
                                             inline=False)
 
@@ -72,7 +73,7 @@ def is_valid_bf_status(bf_status: str) -> bool:
     
 def check_all_add_command_args(args: tuple[str]) -> str | None:
     if len(args) != 4:
-        return f"Add command: invalid number of args, needs 3, got {len(args)} instead"
+        return f"Add command: invalid number of args, needs 3, got {len(args) - 1} instead"
     error_message = ""
     if not is_valid_system(args[1]):
         error_message += "invalid system"
@@ -90,7 +91,7 @@ async def add_custom_bf(command: str, send_to: discord.TextChannel | list[discor
     args = tuple(map(str, command.split(" ")))
     error_message = check_all_add_command_args(args)
     if error_message is not None:
-        await dispatch_message(error_message)
+        await dispatch_message(error_message, send_to[0])
     else:
         #TODO: Fetch vp / adv dynamically
         custom_bf = {"system_name" : args[1],
