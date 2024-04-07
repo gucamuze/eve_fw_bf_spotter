@@ -172,9 +172,9 @@ async def bf_spotter_get_bf_completion() -> list[str, dict, None] | None :
 			if timestamp is not None:
 				with open(results_log_filename, "a") as file:
 					file.write("\n\n")
-				with open(save_log_filaname, "w") as file:
-					json.dump(systems_infos_cmp, file)
 	
+		with open(save_log_filaname, "w") as file:
+			json.dump(systems_infos_cmp, file)
 		print("bf_spotter done")
 		return [fw_request_response.headers['Expires'], results, TMP_all_systems_vp_changes]
 

@@ -11,6 +11,11 @@ def init_scrapper() -> webdriver.Chrome:
     frontlines_url: str = "https://www.eveonline.com/frontlines/gallente"
     scrapper_options = Options()
     scrapper_options.add_argument("--headless")
+    scrapper_options.add_argument("--no-sandbox")
+    scrapper_options.add_argument("--disable-dev-shm-usage")
+    chrome_prefs = {}
+    scrapper_options.experimental_options["prefs"] = chrome_prefs
+    chrome_prefs["profile.default_content_settings"] = {"images": 2}
     driver = webdriver.Chrome(options=scrapper_options)
     driver.get(frontlines_url)
     return driver
