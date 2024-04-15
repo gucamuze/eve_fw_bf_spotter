@@ -1,8 +1,8 @@
-import requests
 import time
 import datetime
 import json
 import os
+import httpx
 from dotenv import load_dotenv
 from adv_scraper import scrapper_get_all_systems_adv
 
@@ -22,24 +22,26 @@ results_log_filename = "log.json"
 save_log_filaname = "cmp_data.json"
 
 # less error-prone get request, catches exceptions. returns the json
-# TODO: NEED TO MAKE ASYNC REQUESTS !
-async def fetch_request(request_url: str) -> requests.Response | None:
-	for attempt in range(request_max_retries):
-		try:
-			response = requests.get(request_url, headers={"User-Agent": header_info})
-			if response.status_code == 200:
-				return response
-			else:
-				print(f"Error: API request failed with status code {response.status_code}")
-				
-			print(f"Retry attempt {attempt + 1}/{request_max_retries} in {request_retry_delay} seconds...")
-			time.sleep(request_retry_delay)
+async def fetch_request(request_url: str) -> httpx.Response | None:
+    for attempt in range(request_max_retries):
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(request_url, headers={"User-Agent": header_info})
+                if response.status_code == 200:
+                    return response
+                else:
+                    print(f"Error: API request failed with status code {response.status_code}")
+     
+        except httpx.HTTPError as e:
+            print(f"Error: Failed to make API request - {e}")
+            print(f"Retry attempt {attempt + 1}/{request_max_retries} in {request_retry_delay} seconds...")
+            time.sleep(request_retry_delay)
+    return None
 
-		except requests.RequestException as e:
-			print(f"Error: Failed to make API request - {e}")
-			print(f"Retry attempt {attempt + 1}/{request_max_retries} in {request_retry_delay} seconds...")
-			time.sleep(request_retry_delay)
-	return None
+def get_system_adv(system_id: int, systems_adv: list[dict]) -> int:
+    for system in systems_adv:
+        if system["id"] == system_id:
+            return system["adv"]
 
 def get_system_adv(system_id: int, systems_adv: list[dict]) -> int:
     for system in systems_adv:

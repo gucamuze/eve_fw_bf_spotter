@@ -1,10 +1,9 @@
 import discord
 import os
-from icecream import ic
+import gc
 from datetime import datetime
 from dotenv import load_dotenv
 from discord.ext import tasks
-
 from eve_bf_spotter import bf_spotter_get_bf_completion, task_must_run
 from discord_bot_utils import dispatch_message, send_battlefield_status_to_all_channels, add_custom_bf
 
@@ -47,6 +46,7 @@ async def background_task():
             print(f"Next task run: {next_task_scheduled_time}")
         else:
             print("BF_spotter not working, ESI might be unreachable")
+    gc.collect()
 
 @bot.event
 async def on_ready():

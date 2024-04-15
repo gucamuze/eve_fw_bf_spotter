@@ -2,5 +2,5 @@ selenium
 discord.py
 icecream
 python-dotenv
-requests
+httpx
 chromedriver
